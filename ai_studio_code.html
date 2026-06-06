@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JS Event Scheduler</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FullCalendar JS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
+
+    <style>
+        /* Custom scrollbar for a cleaner look */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 10px;
+        }
+        /* Ensure calendar takes up good space */
+        #calendar {
+            max-height: 80vh;
+        }
+        /* Basic modal transition */
+        .modal-transition {
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <header class="mb-8 text-center">
+            <h1 class="text-4xl font-bold text-indigo-700">Event Scheduler</h1>
+            <p class="text-gray-500">Click a date to add a new event</p>
+        </header>
+
+        <!-- Calendar Container -->
+        <div class="bg-white shadow-xl rounded-lg p-4 border border-gray-200">
+            <div id="calendar"></div>
+        </div>
+    </div>
+
+    <!-- Event Modal -->
+    <div id="eventModal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-2xl w-full max-w-md transform transition-all">
+            <div class="p-6">
+                <h3 class="text-xl font-semibold text-gray-800 mb-4" id="modalTitle">Add New Event</h3>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Event Title</label>
+                        <input type="text" id="eventTitle" placeholder="e.g., Team Meeting" 
+                               class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Start Time</label>
+                            <input type="time" id="startTime" 
+                                   class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">End Time</label>
+                            <input type="time" id="endTime" 
+                                   class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                    </div>
+                    
+                    <!-- Hidden field to store the clicked date -->
+                    <input type="hidden" id="selectedDate">
+                </div>
+
+                <div class="mt-6 flex justify-end space-x-3">
+                    <button onclick="closeModal()" 
+                            class="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition">
+                        Cancel
+                    </button>
+                    <button onclick="saveEvent()" 
+                            class="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition shadow-lg">
+                        Save Event
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let calendar;
+        const modal = document.getElementById('eventModal');
+        const storageKey = 'calendar_events_data';
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const calendarEl = document.getElementById('calendar');
+
+            // Initialize FullCalendar
+            calendar = new FullCalendar.Calendar(calendarEl, {
+                initialView: 'dayGridMonth',
+                headerToolbar: {
+                    left: 'prev,next today',
+                    center: 'title',
+                    right: 'dayGridMonth,timeGridWeek'
+                },
+                themeSystem: 'standard',
+                selectable: true,
+                editable: true,
+                events: loadEvents(), // Load from LocalStorage on start
+
+                // Handle clicking a day
+                dateClick: function(info) {
+                    openModal(info.dateStr);
+                },
+
+                // Optional: Handle clicking an existing event (to delete)
+                eventClick: function(info) {
+                    if (confirm("Do you want to delete the event: " + info.event.title + "?")) {
+                        info.event.remove();
+                        syncLocalStorage();
+                    }
+                }
+            });
+
+            calendar.render();
+        });
+
+        // --- Functions ---
+
+        function openModal(date) {
+            document.getElementById('selectedDate').value = date;
+            document.getElementById('eventTitle').value = '';
+            document.getElementById('startTime').value = '09:00';
+            document.getElementById('endTime').value = '10:00';
+            
+            modal.classList.remove('hidden');
+        }
+
+        function closeModal() {
+            modal.classList.add('hidden');
+        }
+
+        function saveEvent() {
+            const title = document.getElementById('eventTitle').value;
+            const date = document.getElementById('selectedDate').value;
+            const startTime = document.getElementById('startTime').value;
+            const endTime = document.getElementById('endTime').value;
+
+            if (!title) {
+                alert("Please enter an event title.");
+                return;
+            }
+
+            // Create event object for FullCalendar
+            // ISO format: YYYY-MM-DDTHH:MM:SS
+            const newEvent = {
+                title: title,
+                start: `${date}T${startTime}:00`,
+                end: `${date}T${endTime}:00`,
+                allDay: false
+            };
+
+            // Add to UI
+            calendar.addEvent(newEvent);
+
+            // Persist to LocalStorage
+            syncLocalStorage();
+
+            closeModal();
+        }
+
+        function syncLocalStorage() {
+            // Get all events from the calendar and save them
+            const allEvents = calendar.getEvents().map(event => ({
+                title: event.title,
+                start: event.startStr,
+                end: event.endStr,
+                allDay: event.allDay
+            }));
+            localStorage.setItem(storageKey, JSON.stringify(allEvents));
+        }
+
+        function loadEvents() {
+            const data = localStorage.getItem(storageKey);
+            return data ? JSON.parse(data) : [];
+        }
+
+        // Close modal when clicking outside of the white box
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                closeModal();
+            }
+        }
+    </script>
+</body>
+</html>
